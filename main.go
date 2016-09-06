@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/kataras/iris"
+	"github.com/kataras/iris/config"
 	"github.com/spf13/viper"
 
 	ds "github.com/averrin/shodan/modules/datastream"
@@ -63,5 +64,9 @@ func main() {
 
 	}()
 
-	iris.ListenTLSAuto(fmt.Sprintf("0.0.0.0:%d", *port))
+	// iris.ListenTLSAuto(fmt.Sprintf("0.0.0.0:%d", *port))
+	iris.ListenTo(config.Server{
+		ListeningAddr: fmt.Sprintf("0.0.0.0:%d", *port),
+		AutoTLS:       true,
+	})
 }
