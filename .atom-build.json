@@ -1,0 +1,15 @@
+{
+  "keymap": "alt-v",
+  "cwd": "{PROJECT_PATH}",
+  "cmd": "/usr/local/go/bin/go",
+  "name": "shodan-web",
+  "args": ["build", "-ldflags \"-s\"", "-o", "./shodan-web", "./*.go"],
+  "sh": true,
+  "env": {
+    "GOROOT": "/usr/local/go",
+    "GOPATH": "/home/user/projects/go:/home/user/projects/shodan-web"
+  },
+  "errorMatch": [
+    "(?<file>[\/0-9a-zA-Z\\._]+):(?<line>\\d+): (?<message>.+)"
+  ]
+}
