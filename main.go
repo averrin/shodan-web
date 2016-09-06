@@ -16,7 +16,6 @@ import (
 // VERSION is version number
 var VERSION string
 
-var ws iris.WebsocketServer
 var sockets []iris.WebsocketConnection
 
 var datastream *ds.DataStream
@@ -40,8 +39,7 @@ func main() {
 	storage.ReportEvent("startWeb", "")
 
 	iris.Config.Websocket.Endpoint = "/ws"
-	ws = iris.Websocket
-	ws.OnConnection(func(c iris.WebsocketConnection) {
+	iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
 		sockets = append(sockets, c)
 		c.To(iris.All).Emit("out", []byte("inited\n"))
 		c.On("in", func(message string) {
