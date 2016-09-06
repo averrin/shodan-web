@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/kataras/iris"
 	"github.com/spf13/viper"
@@ -60,7 +61,23 @@ func main() {
 				}
 			}
 		}
-
+	}()
+	shodanStatus := datastream.GetHeartbeat("shodan")
+	go func() {
+		for {
+			select {
+			case ping := <-shodanStatus:
+				e := stor.Event{
+					Event:     "shodanOnline",
+					Timestamp: time.Now(),
+					Note:      fmt.Sprintf("%v", ping),
+				}
+				event, _ := json.Marshal(e)
+				for _, c := range sockets {
+					c.To(iris.All).EmitMessage(event)
+				}
+			}
+		}
 	}()
 
 	iris.Listen(fmt.Sprintf("0.0.0.0:%d", *port))
