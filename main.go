@@ -63,5 +63,5 @@ func main() {
 
 	}()
 
-	iris.Listen(fmt.Sprintf("0.0.0.0:%d", *port))
+	iris.ListenTLSAuto(fmt.Sprintf("0.0.0.0:%d", *port))
 }
