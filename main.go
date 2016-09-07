@@ -74,6 +74,30 @@ func main() {
 	gideonStatus := datastream.GetHeartbeat("gideon")
 	go ReportHeartbeat("gideon", gideonStatus)
 
+	go func() {
+		for {
+			p := datastream.GetWhereIAm()
+			v := ds.Value{}
+			datastream.Get("amount", &v)
+			s, _ := json.Marshal(struct {
+				Place  ds.Point
+				Amount ds.Value
+			}{
+				p, v,
+			})
+			e := stor.Event{
+				Event:     "status",
+				Timestamp: time.Now(),
+				Note:      string(s),
+			}
+			event, _ := json.Marshal(e)
+			for _, c := range sockets {
+				c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
+			}
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
 	iris.Listen(fmt.Sprintf("0.0.0.0:%d", *port))
 	// iris.ListenTo(config.Server{
 	// 	ListeningAddr: fmt.Sprintf("0.0.0.0:%d", *port),
