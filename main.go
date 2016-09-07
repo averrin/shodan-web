@@ -42,10 +42,16 @@ func main() {
 	iris.Config.Websocket.Endpoint = "/ws"
 	iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
 		sockets = append(sockets, c)
-		c.To(iris.All).Emit("out", []byte("inited\n"))
 		c.On("in", func(message string) {
 			c.To(iris.All).Emit("out",
 				[]byte(fmt.Sprintf(">> %s\n", message)))
+		})
+		c.OnDisconnect(func() {
+			for i, s := range sockets {
+				if s.ID() == c.ID() {
+					sockets = append(sockets[:i], sockets[i+1:]...)
+				}
+			}
 		})
 	})
 
@@ -57,8 +63,9 @@ func main() {
 				log.Println(e)
 				event, _ := json.Marshal(e)
 				for _, c := range sockets {
-					c.To(iris.All).EmitMessage(event)
+					c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
 				}
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}()
@@ -74,7 +81,7 @@ func main() {
 				}
 				event, _ := json.Marshal(e)
 				for _, c := range sockets {
-					c.To(iris.All).EmitMessage(event)
+					c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
 				}
 			}
 		}
