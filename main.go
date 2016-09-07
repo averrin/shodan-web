@@ -70,26 +70,30 @@ func main() {
 		}
 	}()
 	shodanStatus := datastream.GetHeartbeat("shodan")
-	go func() {
-		for {
-			select {
-			case ping := <-shodanStatus:
-				e := stor.Event{
-					Event:     "shodanOnline",
-					Timestamp: time.Now(),
-					Note:      fmt.Sprintf("%v", ping),
-				}
-				event, _ := json.Marshal(e)
-				for _, c := range sockets {
-					c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
-				}
-			}
-		}
-	}()
+	go ReportHeartbeat("shodan", shodanStatus)
+	gideonStatus := datastream.GetHeartbeat("gideon")
+	go ReportHeartbeat("gideon", gideonStatus)
 
 	iris.Listen(fmt.Sprintf("0.0.0.0:%d", *port))
 	// iris.ListenTo(config.Server{
 	// 	ListeningAddr: fmt.Sprintf("0.0.0.0:%d", *port),
 	// 	AutoTLS:       true,
 	// })
+}
+
+func ReportHeartbeat(name string, status chan bool) {
+	for {
+		select {
+		case ping := <-status:
+			e := stor.Event{
+				Event:     name + "Online",
+				Timestamp: time.Now(),
+				Note:      fmt.Sprintf("%v", ping),
+			}
+			event, _ := json.Marshal(e)
+			for _, c := range sockets {
+				c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
+			}
+		}
+	}
 }
