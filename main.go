@@ -19,11 +19,22 @@ import (
 // VERSION is version number
 var VERSION string
 
-var sockets []iris.WebsocketConnection
+type Sockets []iris.WebsocketConnection
+
+var sockets Sockets
 
 var datastream *ds.DataStream
 var auth *a.Auth
 var storage *stor.Storage
+
+func (s Sockets) In(c iris.WebsocketConnection) bool {
+	for _, conn := range s {
+		if c.ID() == conn.ID() {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
 	port := flag.Int("port", 80, "serve port")
@@ -55,14 +66,11 @@ func main() {
 					status = "success"
 
 					history := []stor.Event{}
-					s := storage.GetSession()
 					db := (*storage)["database"]
-					res, err := r.DB(db).Table("events").OrderBy(r.Desc("Timestamp")).Limit(10).OrderBy(r.Asc("Timestamp")).Run(s)
-					defer res.Close()
-					if err != nil {
-						log.Println(err)
-					}
-					res.All(&history)
+					storage.Exec(
+						r.DB(db).Table("events").OrderBy(r.Desc("Timestamp")).Limit(10).OrderBy(r.Asc("Timestamp")),
+						&history,
+					)
 					for _, e := range history {
 						event, _ := json.Marshal(e)
 						c.EmitMessage([]byte(string(event) + "\n"))
@@ -77,6 +85,22 @@ func main() {
 				event, _ := json.Marshal(e)
 				c.EmitMessage([]byte(string(event) + "\n"))
 
+			}
+			if message.Event == "accountHistory" && sockets.In(c) {
+				history := []stor.Event{}
+				db := (*storage)["database"]
+				storage.Exec(
+					r.DB(db).Table("events").Filter(map[string]string{"Event": "amount"}).OrderBy(r.Asc("Timestamp")),
+					&history,
+				)
+				e := stor.Event{
+					Event:     "accountHistory",
+					Timestamp: time.Now(),
+					Note:      "",
+					Payload:   history,
+				}
+				event, _ := json.Marshal(e)
+				c.EmitMessage([]byte(string(event) + "\n"))
 			}
 		})
 		c.OnDisconnect(func() {
@@ -112,20 +136,20 @@ func main() {
 			p := datastream.GetWhereIAm()
 			v := ds.Value{}
 			datastream.Get("amount", &v)
-			s, _ := json.Marshal(struct {
+			s := struct {
 				Place  ds.Point
 				Amount ds.Value
 			}{
 				p, v,
-			})
+			}
 			e := stor.Event{
 				Event:     "status",
 				Timestamp: time.Now(),
-				Note:      string(s),
+				Payload:   s,
 			}
 			event, _ := json.Marshal(e)
 			for _, c := range sockets {
-				c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
+				c.EmitMessage([]byte(string(event) + "\n"))
 			}
 			time.Sleep(5 * time.Second)
 		}
@@ -149,7 +173,7 @@ func ReportHeartbeat(name string, status chan bool) {
 			}
 			event, _ := json.Marshal(e)
 			for _, c := range sockets {
-				c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
+				c.EmitMessage([]byte(string(event) + "\n"))
 			}
 		}
 	}
