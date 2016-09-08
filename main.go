@@ -10,8 +10,10 @@ import (
 	"github.com/kataras/iris"
 	"github.com/spf13/viper"
 
+	a "github.com/averrin/shodan/modules/auth"
 	ds "github.com/averrin/shodan/modules/datastream"
 	stor "github.com/averrin/shodan/modules/storage"
+	r "gopkg.in/dancannon/gorethink.v2"
 )
 
 // VERSION is version number
@@ -20,6 +22,7 @@ var VERSION string
 var sockets []iris.WebsocketConnection
 
 var datastream *ds.DataStream
+var auth *a.Auth
 var storage *stor.Storage
 
 func main() {
@@ -34,6 +37,7 @@ func main() {
 	}
 
 	datastream = ds.Connect(viper.GetStringMapString("datastream"))
+	auth = a.Connect(datastream)
 	storage = stor.Connect(viper.GetStringMapString("storage"))
 
 	datastream.Heartbeat("shodan-web")
@@ -41,10 +45,39 @@ func main() {
 
 	iris.Config.Websocket.Endpoint = "/ws"
 	iris.Websocket.OnConnection(func(c iris.WebsocketConnection) {
-		sockets = append(sockets, c)
-		c.On("in", func(message string) {
-			c.To(iris.All).Emit("out",
-				[]byte(fmt.Sprintf(">> %s\n", message)))
+		c.OnMessage(func(m []byte) {
+			message := stor.Event{}
+			json.Unmarshal(m, &message)
+			if message.Event == "auth" {
+				status := "error"
+				if auth.Check(message.Note) {
+					sockets = append(sockets, c)
+					status = "success"
+
+					history := []stor.Event{}
+					s := storage.GetSession()
+					db := (*storage)["database"]
+					res, err := r.DB(db).Table("events").OrderBy(r.Desc("Timestamp")).Limit(10).OrderBy(r.Asc("Timestamp")).Run(s)
+					defer res.Close()
+					if err != nil {
+						log.Println(err)
+					}
+					res.All(&history)
+					for _, e := range history {
+						event, _ := json.Marshal(e)
+						c.EmitMessage([]byte(string(event) + "\n"))
+						time.Sleep(100 * time.Millisecond)
+					}
+				}
+				e := stor.Event{
+					Event:     "auth",
+					Timestamp: time.Now(),
+					Note:      status,
+				}
+				event, _ := json.Marshal(e)
+				c.EmitMessage([]byte(string(event) + "\n"))
+
+			}
 		})
 		c.OnDisconnect(func() {
 			for i, s := range sockets {
@@ -63,7 +96,7 @@ func main() {
 				log.Println(e)
 				event, _ := json.Marshal(e)
 				for _, c := range sockets {
-					c.To(iris.All).EmitMessage([]byte(string(event) + "\n"))
+					c.EmitMessage([]byte(string(event) + "\n"))
 				}
 				time.Sleep(500 * time.Millisecond)
 			}
