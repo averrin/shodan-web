@@ -136,11 +136,14 @@ func main() {
 			p := datastream.GetWhereIAm()
 			v := ds.Value{}
 			datastream.Get("amount", &v)
+			b := ds.Value{}
+			datastream.Get("battery", &b)
 			s := struct {
-				Place  ds.Point
-				Amount ds.Value
+				Place   ds.Point
+				Amount  ds.Value
+				Battery ds.Value
 			}{
-				p, v,
+				p, v, b,
 			}
 			e := stor.Event{
 				Event:     "status",
