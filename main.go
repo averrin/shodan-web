@@ -138,12 +138,18 @@ func main() {
 			datastream.Get("amount", &v)
 			b := ds.Value{}
 			datastream.Get("battery", &b)
+			wio := ds.Value{}
+			datastream.Get("weatherisok", &wio)
+			w := ds.Value{}
+			datastream.Get("weather", &w)
 			s := struct {
-				Place   ds.Point
-				Amount  ds.Value
-				Battery ds.Value
+				Place       ds.Point
+				Amount      ds.Value
+				Battery     ds.Value
+				WeatherIsOk ds.Value
+				Weather     ds.Value
 			}{
-				p, v, b,
+				p, v, b, wio, w,
 			}
 			e := stor.Event{
 				Event:     "status",
