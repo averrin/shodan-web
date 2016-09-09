@@ -64,18 +64,6 @@ func main() {
 				if auth.Check(message.Note) {
 					sockets = append(sockets, c)
 					status = "success"
-
-					history := []stor.Event{}
-					db := (*storage)["database"]
-					storage.Exec(
-						r.DB(db).Table("events").OrderBy(r.Desc("Timestamp")).Limit(10).OrderBy(r.Asc("Timestamp")),
-						&history,
-					)
-					for _, e := range history {
-						event, _ := json.Marshal(e)
-						c.EmitMessage([]byte(string(event) + "\n"))
-						time.Sleep(100 * time.Millisecond)
-					}
 				}
 				e := stor.Event{
 					Event:     "auth",
@@ -85,6 +73,19 @@ func main() {
 				event, _ := json.Marshal(e)
 				c.EmitMessage([]byte(string(event) + "\n"))
 
+			}
+			if message.Event == "eventsHistory" && sockets.In(c) {
+				history := []stor.Event{}
+				db := (*storage)["database"]
+				storage.Exec(
+					r.DB(db).Table("events").OrderBy(r.Desc("Timestamp")).Limit(10).OrderBy(r.Asc("Timestamp")),
+					&history,
+				)
+				for _, e := range history {
+					event, _ := json.Marshal(e)
+					c.EmitMessage([]byte(string(event) + "\n"))
+					time.Sleep(100 * time.Millisecond)
+				}
 			}
 			if message.Event == "accountHistory" && sockets.In(c) {
 				history := []stor.Event{}
