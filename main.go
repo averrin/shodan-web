@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/kataras/iris"
@@ -26,6 +27,7 @@ var sockets Sockets
 var datastream *ds.DataStream
 var auth *a.Auth
 var storage *stor.Storage
+var lock *sync.Mutex
 
 func (s Sockets) In(c iris.WebsocketConnection) bool {
 	for _, conn := range s {
@@ -37,6 +39,7 @@ func (s Sockets) In(c iris.WebsocketConnection) bool {
 }
 
 func main() {
+	lock = &sync.Mutex{}
 	port := flag.Int("port", 80, "serve port")
 	flag.Parse()
 	viper.SetConfigType("yaml")
@@ -104,18 +107,7 @@ func main() {
 				c.EmitMessage([]byte(string(event) + "\n"))
 			}
 			if message.Event == "listNotes" && sockets.In(c) {
-				notes := []stor.Note{}
-				db := (*storage)["database"]
-				storage.Exec(
-					r.DB(db).Table("notes"),
-					&notes,
-				)
-				e := stor.Event{
-					Event:     "listNotes",
-					Timestamp: time.Now(),
-					Note:      "",
-					Payload:   notes,
-				}
+				e := GetNotes()
 				event, _ := json.Marshal(e)
 				c.EmitMessage([]byte(string(event) + "\n"))
 			}
@@ -129,60 +121,14 @@ func main() {
 		})
 	})
 
-	events := storage.GetEventsStream()
-	go func() {
-		for {
-			select {
-			case e := <-events:
-				log.Println(e)
-				event, _ := json.Marshal(e)
-				for _, c := range sockets {
-					c.EmitMessage([]byte(string(event) + "\n"))
-				}
-				time.Sleep(500 * time.Millisecond)
-			}
-		}
-	}()
+	go ReportEvents()
+	go ReportNotes()
 	shodanStatus := datastream.GetHeartbeat("shodan")
 	go ReportHeartbeat("shodan", shodanStatus)
 	gideonStatus := datastream.GetHeartbeat("gideon")
 	go ReportHeartbeat("gideon", gideonStatus)
 
-	go func() {
-		for {
-			p := datastream.GetWhereIAm()
-			v := ds.Value{}
-			datastream.Get("amount", &v)
-			b := ds.Value{}
-			datastream.Get("battery", &b)
-			wio := ds.Value{}
-			datastream.Get("weatherisok", &wio)
-			w := ds.Value{}
-			datastream.Get("weather", &w)
-			a := ds.Value{}
-			datastream.Get("attendance", &a)
-			s := struct {
-				Place       ds.Point
-				Amount      ds.Value
-				Battery     ds.Value
-				WeatherIsOk ds.Value
-				Weather     ds.Value
-				Attendance  ds.Value
-			}{
-				p, v, b, wio, w, a,
-			}
-			e := stor.Event{
-				Event:     "status",
-				Timestamp: time.Now(),
-				Payload:   s,
-			}
-			event, _ := json.Marshal(e)
-			for _, c := range sockets {
-				c.EmitMessage([]byte(string(event) + "\n"))
-			}
-			time.Sleep(5 * time.Second)
-		}
-	}()
+	go ReportStatus()
 
 	iris.Listen(fmt.Sprintf("0.0.0.0:%d", *port))
 	// iris.ListenTo(config.Server{
@@ -191,6 +137,93 @@ func main() {
 	// })
 }
 
+func GetNotes() stor.Event {
+	notes := []stor.Note{}
+	db := (*storage)["database"]
+	storage.Exec(
+		r.DB(db).Table("notes"),
+		&notes,
+	)
+	e := stor.Event{
+		Event:     "listNotes",
+		Timestamp: time.Now(),
+		Note:      "",
+		Payload:   notes,
+	}
+	return e
+}
+
+func ReportNotes() {
+	events := storage.GetNotesStream()
+	for {
+		select {
+		case <-events:
+			e := GetNotes()
+			event, _ := json.Marshal(e)
+			lock.Lock()
+			for _, c := range sockets {
+				c.EmitMessage([]byte(string(event) + "\n"))
+			}
+			lock.Unlock()
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+}
+
+func ReportEvents() {
+	events := storage.GetEventsStream()
+	for {
+		select {
+		case e := <-events:
+			log.Println(e)
+			event, _ := json.Marshal(e)
+			lock.Lock()
+			for _, c := range sockets {
+				c.EmitMessage([]byte(string(event) + "\n"))
+			}
+			lock.Unlock()
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+}
+
+func ReportStatus() {
+	for {
+		p := datastream.GetWhereIAm()
+		v := ds.Value{}
+		datastream.Get("amount", &v)
+		b := ds.Value{}
+		datastream.Get("battery", &b)
+		wio := ds.Value{}
+		datastream.Get("weatherisok", &wio)
+		w := ds.Value{}
+		datastream.Get("weather", &w)
+		a := ds.Value{}
+		datastream.Get("attendance", &a)
+		s := struct {
+			Place       ds.Point
+			Amount      ds.Value
+			Battery     ds.Value
+			WeatherIsOk ds.Value
+			Weather     ds.Value
+			Attendance  ds.Value
+		}{
+			p, v, b, wio, w, a,
+		}
+		e := stor.Event{
+			Event:     "status",
+			Timestamp: time.Now(),
+			Payload:   s,
+		}
+		event, _ := json.Marshal(e)
+		lock.Lock()
+		for _, c := range sockets {
+			c.EmitMessage([]byte(string(event) + "\n"))
+		}
+		lock.Unlock()
+		time.Sleep(5 * time.Second)
+	}
+}
 func ReportHeartbeat(name string, status chan bool) {
 	for {
 		select {
@@ -201,9 +234,11 @@ func ReportHeartbeat(name string, status chan bool) {
 				Note:      fmt.Sprintf("%v", ping),
 			}
 			event, _ := json.Marshal(e)
+			lock.Lock()
 			for _, c := range sockets {
 				c.EmitMessage([]byte(string(event) + "\n"))
 			}
+			lock.Unlock()
 		}
 	}
 }
