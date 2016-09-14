@@ -103,6 +103,22 @@ func main() {
 				event, _ := json.Marshal(e)
 				c.EmitMessage([]byte(string(event) + "\n"))
 			}
+			if message.Event == "listNotes" && sockets.In(c) {
+				notes := []stor.Note{}
+				db := (*storage)["database"]
+				storage.Exec(
+					r.DB(db).Table("notes"),
+					&notes,
+				)
+				e := stor.Event{
+					Event:     "listNotes",
+					Timestamp: time.Now(),
+					Note:      "",
+					Payload:   notes,
+				}
+				event, _ := json.Marshal(e)
+				c.EmitMessage([]byte(string(event) + "\n"))
+			}
 		})
 		c.OnDisconnect(func() {
 			for i, s := range sockets {
