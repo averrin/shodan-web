@@ -117,6 +117,12 @@ func main() {
 				event, _ := json.Marshal(e)
 				c.EmitMessage([]byte(string(event) + "\n"))
 			}
+			if message.Event == "addNote" && sockets.In(c) {
+				storage.SaveNote(message.Note)
+				e := GetNotes()
+				event, _ := json.Marshal(e)
+				c.EmitMessage([]byte(string(event) + "\n"))
+			}
 		})
 		c.OnDisconnect(func() {
 			for i, s := range sockets {
